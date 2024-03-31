@@ -2,7 +2,7 @@ const express = require("express");
 const ytdl = require("ytdl-core");
 const fs = require("fs");
 const ffmpeg = require("ffmpeg-static");
-const { spawn } = require("child_process");
+const process = require("child_process");
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 const path = require("path");
 
@@ -27,37 +27,40 @@ app.get("/convertToMP3", async (req, res) => {
   const url = req.query.url;
 
   try {
-    const videoStream = ytdl(url, { filter: "audioonly" });
-
-    const ffmpegProcess = spawn(ffmpegPath, [
-      "-y",
-      "-i",
-      "pipe:0",
-      "-vn",
-      "-acodec",
-      "libmp3lame",
-      "pipe:1",
-    ]);
-
-    videoStream.pipe(ffmpegProcess.stdin);
-
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Content-Disposition", 'attachment; filename="file.mp3"');
-
-    ffmpegProcess.stdout.pipe(res);
-
-    ffmpegProcess.on("exit", (code, signal) => {
-      if (code !== 0) {
-        console.error(
-          `ffmpeg process exited with code ${code} and signal ${signal}`
-        );
-        res.status(500).send("Conversion failed!");
-      }
+    await new Promise((resolve, reject) => {
+      ytdl(url, { filter: "audioonly" })
+        .pipe(fs.createWriteStream("video.mp4"))
+        .on("finish", resolve)
+        .on("error", reject);
     });
+
+    await new Promise((resolve, reject) => {
+      let stderr = "";
+      const ffmpegProcess = process.spawn(ffmpegPath, [
+        "-y",
+        "-i",
+        "video.mp4",
+        "-vn",
+        "-acodec",
+        "libmp3lame",
+        "output.mp3",
+      ]);
+      ffmpegProcess.stderr.on("data", (data) => (stderr += data.toString()));
+      ffmpegProcess.on("exit", (code) => {
+        if (code === 0) resolve();
+        else
+          reject(
+            new Error(`ffmpeg process exited with code ${code} : ${stderr}`)
+          );
+      });
+    });
+
+    res.setHeader("Content-Disposition", 'attachment; filename="file.mp3"');
+    res.status(200).sendFile(path.resolve("./output.mp3"));
   } catch (error) {
     console.error("Error:", error);
     res.status(500).json({
-      error: "Error 500 request couldn't be granted " + error,
+      error: "Error 500 request couldn't be granted" + error,
     });
   }
 });
