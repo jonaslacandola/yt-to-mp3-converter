@@ -60,7 +60,7 @@ app.get("/convertToMP3", async (req, res) => {
   } catch (error) {
     console.error("Error:", error);
     res.status(500).json({
-      error: "Error 500 request couldn't be granted",
+      error: "Error 500 request couldn't be granted " + error,
     });
   }
 });
